@@ -14861,10 +14861,16 @@ if let tiff = image?.tiffRepresentation {
       }
     }
 
-    const success = copySnippetToClipboard(id);
-    if (!success) return false;
+    const text = renderSnippetById(id);
+    if (text == null) return false;
 
-    return await hideAndPaste();
+    // Hide the launcher so the paste lands in the previously focused app.
+    if (isVisible) hideWindow();
+
+    // pasteTextToActiveApp saves the user's clipboard, writes the snippet,
+    // pastes it via the active app, then restores the original clipboard —
+    // so the snippet text doesn't linger on the pasteboard.
+    return await pasteTextToActiveApp(text);
   });
 
   ipcMain.handle('snippet-paste-resolved', async (_event: any, id: string, dynamicValues?: Record<string, string>) => {
@@ -14879,10 +14885,12 @@ if let tiff = image?.tiffRepresentation {
       }
     }
 
-    const success = copySnippetToClipboardResolved(id, dynamicValues);
-    if (!success) return false;
+    const text = renderSnippetById(id, dynamicValues);
+    if (text == null) return false;
 
-    return await hideAndPaste();
+    if (isVisible) hideWindow();
+
+    return await pasteTextToActiveApp(text);
   });
 
   ipcMain.handle('snippet-import', async (event: any) => {
