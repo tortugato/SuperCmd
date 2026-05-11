@@ -43,7 +43,7 @@ import { useSpeakManager } from './hooks/useSpeakManager';
 import { useWhisperManager } from './hooks/useWhisperManager';
 import { useInlineArgumentAnchor } from './hooks/useInlineArgumentAnchor';
 import { useBrowserSearch } from './hooks/useBrowserSearch';
-import { LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
+import { AI_CHAT_STORAGE_KEY, LAST_EXT_KEY, MAX_RECENT_COMMANDS } from './utils/constants';
 import { applyBaseColor } from './utils/base-color';
 import { resetAccessToken } from './raycast-api';
 import {
@@ -57,6 +57,7 @@ import {
   getShortcutDisplayParts,
 } from './utils/command-helpers';
 import {
+  collectLegacyExtensionPreferencesSnapshot,
   readJsonObject, writeJsonObject,
   getCmdArgsKey,
   getScriptCmdArgsKey,
@@ -2812,6 +2813,33 @@ const App: React.FC = () => {
   // Signal main process that the renderer is mounted and IPC listeners are
   // registered.  Main waits for this before dispatching the initial
   // window-shown / run-system-command messages so they are never lost.
+  useEffect(() => {
+    const legacySnapshot = collectLegacyExtensionPreferencesSnapshot();
+    if (
+      Object.keys(legacySnapshot.extensions).length === 0 &&
+      Object.keys(legacySnapshot.commands).length === 0
+    ) {
+      return;
+    }
+    void window.electron.mergeExtensionPreferencesSnapshot(legacySnapshot);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AI_CHAT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+      void window.electron.mergeAiChatSnapshot({
+        version: 1,
+        conversations: parsed.map((conversation: any) => ({
+          ...conversation,
+          source: conversation?.source === 'raycast' ? 'raycast' : 'local',
+        })),
+      });
+    } catch {}
+  }, []);
+
   useEffect(() => {
     window.electron.rendererReady();
   }, []);
