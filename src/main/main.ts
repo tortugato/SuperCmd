@@ -12227,6 +12227,17 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  {
+    scheme: 'sc-clipboard',
+    privileges: {
+      standard: true,
+      secure: true,
+      corsEnabled: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
 ]);
 
 app.whenReady().then(async () => {
@@ -12325,6 +12336,27 @@ app.whenReady().then(async () => {
 
       const { pathToFileURL } = require('url');
       // Convert via pathToFileURL so spaces/special chars are encoded correctly.
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Bad Request', { status: 400 });
+    }
+  });
+
+  // Register the sc-clipboard:// protocol handler to serve clipboard image
+  // files. In development the renderer is on http://localhost, so raw file://
+  // URLs are blocked by webSecurity. sc-clipboard:// is privileged and works
+  // from any origin.
+  protocol.handle('sc-clipboard', (request: any) => {
+    try {
+      const url = new URL(request.url);
+      let filePath = decodeURIComponent(url.pathname || '');
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.slice(1);
+      }
+      if (!filePath) {
+        return new Response('Bad Request', { status: 400 });
+      }
+      const { pathToFileURL } = require('url');
       return net.fetch(pathToFileURL(filePath).toString());
     } catch {
       return new Response('Bad Request', { status: 400 });
