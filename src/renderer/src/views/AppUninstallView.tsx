@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { ArrowLeft, Check, Folder, File, ChevronDown, Trash2, Circle, Copy, FolderOpen, Info } from 'lucide-react';
+import { ArrowLeft, Folder, File, ChevronDown, Trash2, Circle, Copy, FolderOpen, Info } from 'lucide-react';
 import { useI18n } from '../i18n';
 import type { AppUninstallScanResult } from '../../types/electron';
 
@@ -49,6 +49,7 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
   const [selectedActionIndex, setSelectedActionIndex] = useState(0);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [appIcon, setAppIcon] = useState<string | null>(null);
+  const [itemIcons, setItemIcons] = useState<Map<string, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +80,25 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [appPath]);
+
+  // Fetch macOS system icons for each remnant item
+  useEffect(() => {
+    if (!scanResult) return;
+    let cancelled = false;
+    void (async () => {
+      const icons = new Map<string, string>();
+      await Promise.all(
+        scanResult.remnants.map(async (r) => {
+          try {
+            const dataUrl = await window.electron.getFileIconDataUrl(r.path, 32);
+            if (dataUrl) icons.set(r.path, dataUrl);
+          } catch {}
+        })
+      );
+      if (!cancelled) setItemIcons(new Map(icons));
+    })();
+    return () => { cancelled = true; };
+  }, [scanResult]);
 
   // Derived data
   const filteredRemnants = useMemo(() => {
@@ -404,23 +424,27 @@ export default function AppUninstallView({ appPath, onClose }: AppUninstallViewP
               onClick={() => { setSelectedIndex(idx); toggleCheck(remnant.path); }}
             >
               {/* Checkbox */}
-              <div
-                className={`w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center flex-shrink-0 transition-colors ${
-                  isChecked
-                    ? 'bg-[var(--accent)] border-[var(--accent)]'
-                    : 'border-[var(--text-muted)]'
-                }`}
-              >
-                {isChecked && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-              </div>
+              <input
+                type="checkbox"
+                className="settings-checkbox flex-shrink-0"
+                checked={isChecked}
+                onChange={() => {}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedIndex(idx);
+                  toggleCheck(remnant.path);
+                }}
+              />
 
-              {/* Icon */}
+              {/* Icon — use macOS system icon via getFileIconDataUrl; fall back to lucide */}
               {remnant.isAppBundle && appIcon ? (
-                <img src={appIcon} alt="" className="w-6 h-6 flex-shrink-0" />
+                <img src={appIcon} alt="" className="w-6 h-6 flex-shrink-0 object-contain" />
+              ) : itemIcons.get(remnant.path) ? (
+                <img src={itemIcons.get(remnant.path)} alt="" className="w-5 h-5 flex-shrink-0 object-contain" />
               ) : isFile ? (
                 <File className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" />
               ) : (
-                <Folder className="w-5 h-5 text-blue-400 flex-shrink-0" fill="currentColor" />
+                <Folder className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" />
               )}
 
               {/* Label + location on same line */}
