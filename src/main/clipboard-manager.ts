@@ -654,6 +654,7 @@ function getClipboardImageFingerprint(): {
       };
     }
 
+
   } catch {}
   return { fingerprint: '' };
 }
