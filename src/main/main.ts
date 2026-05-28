@@ -3043,6 +3043,7 @@ let hyperKeyMonitorRestartTimer: NodeJS.Timeout | null = null;
 let hyperKeyMonitorEnabled = false;
 let fnSpeakToggleLastPressedAt = 0;
 let fnSpeakToggleIsPressed = false;
+let fnSpeakToggleCurrentShortcut = 'Fn';
 type LocalSpeakBackend = 'edge-tts' | 'system-say';
 let edgeTtsConstructorResolved = false;
 let edgeTtsConstructor: any | null = null;
@@ -6299,7 +6300,7 @@ function normalizeAccelerator(shortcut: string): string {
       else normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super') {
+    if (token === 'cmd' || token === 'command' || token === 'meta' || token === 'super' || token === 'leftcmd' || token === 'leftcommand' || token === 'leftmeta' || token === 'rightcmd' || token === 'rightcommand' || token === 'rightmeta') {
       normalizedModifiers.command = true;
       continue;
     }
@@ -6307,7 +6308,7 @@ function normalizeAccelerator(shortcut: string): string {
       normalizedModifiers.control = true;
       continue;
     }
-    if (token === 'alt' || token === 'option') {
+    if (token === 'alt' || token === 'option' || token === 'leftalt' || token === 'leftoption' || token === 'rightalt' || token === 'rightoption') {
       normalizedModifiers.alt = true;
       continue;
     }
@@ -6405,6 +6406,29 @@ function isFnShortcut(shortcut: string): boolean {
   return Boolean(config?.fn);
 }
 
+// Standalone modifier keys that need a native CGEventTap watcher
+// instead of Electron's globalShortcut (which ignores bare modifiers).
+const STANDALONE_MODIFIER_KEYCODES: Record<string, number> = {
+  alt: 58, option: 58,                     // Left Option
+  leftoption: 58, leftalt: 58,             // Left Option (explicit)
+  rightoption: 61, rightalt: 61,           // Right Option
+  command: 55, cmd: 55, meta: 55,           // Left Command
+  leftcommand: 55, leftcmd: 55, leftmeta: 55, // Left Command (explicit)
+  rightcommand: 54, rightcmd: 54, rightmeta: 54, // Right Command
+  control: 59, ctrl: 59,                   // Left Control
+  shift: 56,                                // Left Shift
+};
+
+function isStandaloneModifierShortcut(shortcut: string): boolean {
+  const normalized = normalizeAccelerator(shortcut).trim().toLowerCase();
+  return normalized in STANDALONE_MODIFIER_KEYCODES;
+}
+
+function needsNativeHoldWatcher(shortcut: string): boolean {
+  if (!shortcut) return false;
+  return isFnOnlyShortcut(shortcut) || isFnShortcut(shortcut) || isStandaloneModifierShortcut(shortcut);
+}
+
 function parseHoldShortcutConfig(shortcut: string): {
   keyCode: number;
   cmd: boolean;
@@ -6433,16 +6457,32 @@ function parseHoldShortcutConfig(shortcut: string): {
     home: 115, end: 119, pageup: 116, pagedown: 121,
     f1: 122, f2: 120, f3: 99, f4: 118, f5: 96, f6: 97, f7: 98, f8: 100,
     f9: 101, f10: 109, f11: 103, f12: 111,
+    // Standalone modifier keys for CGEventTap monitoring
+    alt: 58, option: 58,
+    leftoption: 58, leftalt: 58,
+    rightoption: 61, rightalt: 61,
+    command: 55, cmd: 55, meta: 55,
+    leftcommand: 55, leftcmd: 55, leftmeta: 55,
+    rightcommand: 54, rightcmd: 54, rightmeta: 54,
+    control: 59, ctrl: 59,
+    shift: 56,
   };
   const keyCode = map[keyToken];
   if (!Number.isFinite(keyCode)) return null;
   const fnAsModifier = mods.has('fn') || mods.has('function');
+  // When the key token itself is a standalone modifier, set the corresponding
+  // flag so the Swift monitor checks that the modifier flag is active when
+  // the physical key is pressed (same pattern as the Fn key).
+  const isStandaloneAlt = keyToken === 'alt' || keyToken === 'option' || keyToken === 'leftoption' || keyToken === 'leftalt' || keyToken === 'rightoption' || keyToken === 'rightalt';
+  const isStandaloneCmd = keyToken === 'command' || keyToken === 'cmd' || keyToken === 'meta' || keyToken === 'leftcommand' || keyToken === 'leftcmd' || keyToken === 'leftmeta' || keyToken === 'rightcommand' || keyToken === 'rightcmd' || keyToken === 'rightmeta';
+  const isStandaloneCtrl = keyToken === 'control' || keyToken === 'ctrl';
+  const isStandaloneShift = keyToken === 'shift';
   return {
     keyCode,
-    cmd: mods.has('command') || mods.has('cmd') || mods.has('meta'),
-    ctrl: mods.has('control') || mods.has('ctrl'),
-    alt: mods.has('alt') || mods.has('option'),
-    shift: mods.has('shift'),
+    cmd: mods.has('command') || mods.has('cmd') || mods.has('meta') || isStandaloneCmd,
+    ctrl: mods.has('control') || mods.has('ctrl') || isStandaloneCtrl,
+    alt: mods.has('alt') || mods.has('option') || isStandaloneAlt,
+    shift: mods.has('shift') || isStandaloneShift,
     fn: fnAsModifier || keyToken === 'fn' || keyToken === 'function',
   };
 }
@@ -6842,7 +6882,7 @@ function startFnCommandWatcher(commandId: string, shortcut: string): void {
 
 function startFnSpeakToggleWatcher(): void {
   if (fnSpeakToggleWatcherProcess || !fnSpeakToggleWatcherEnabled) return;
-  const config = parseHoldShortcutConfig('Fn');
+  const config = parseHoldShortcutConfig(fnSpeakToggleCurrentShortcut || 'Fn');
   if (!config) return;
   const binaryPath = ensureWhisperHoldWatcherBinary();
   if (!binaryPath) return;
@@ -6951,11 +6991,11 @@ function startFnSpeakToggleWatcher(): void {
 }
 
 function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
-  // Do not start the CGEventTap-based Fn watcher during onboarding.
+  // Do not start the CGEventTap-based watcher during onboarding.
   // The tap requires Input Monitoring (and sometimes Accessibility) permission,
   // which would trigger system dialogs before the user reaches the Grant Access step.
   // Exception: fnWatcherOnboardingOverride is set when the user reaches the Dictation
-  // test step (step 4) so they can actually test the Fn key during setup.
+  // test step (step 4) so they can actually test the key during setup.
   if (!loadSettings().hasSeenOnboarding && !fnWatcherOnboardingOverride) {
     stopFnSpeakToggleWatcher();
     return;
@@ -6966,12 +7006,21 @@ function syncFnSpeakToggleWatcher(hotkeys: Record<string, string>): void {
     return;
   }
   const speakToggle = String(hotkeys?.['system-supercmd-whisper-speak-toggle'] || '').trim();
-  const shouldEnable = isFnOnlyShortcut(speakToggle);
+  const shouldEnable = needsNativeHoldWatcher(speakToggle);
   if (!shouldEnable) {
+    fnSpeakToggleCurrentShortcut = '';
     stopFnSpeakToggleWatcher();
     return;
   }
+  // If the shortcut changed, stop the existing watcher so it restarts with the new key.
+  const shortcutChanged = speakToggle !== fnSpeakToggleCurrentShortcut;
+  if (shortcutChanged && fnSpeakToggleWatcherProcess) {
+    try { fnSpeakToggleWatcherProcess.kill('SIGTERM'); } catch {}
+    fnSpeakToggleWatcherProcess = null;
+    fnSpeakToggleWatcherStdoutBuffer = '';
+  }
   fnSpeakToggleWatcherEnabled = true;
+  fnSpeakToggleCurrentShortcut = speakToggle;
   startFnSpeakToggleWatcher();
 }
 
@@ -6981,7 +7030,7 @@ function syncFnCommandWatchers(hotkeys: Record<string, string>): void {
     const shortcut = String(shortcutRaw || '').trim();
     if (!shortcut) continue;
     const normalized = normalizeAccelerator(shortcut);
-    const isFnSpeakToggle = commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalized);
+    const isFnSpeakToggle = commandId === 'system-supercmd-whisper-speak-toggle' && (isFnOnlyShortcut(normalized) || isStandaloneModifierShortcut(normalized));
     if (isFnSpeakToggle) continue;
     if (!isFnShortcut(normalized)) continue;
     desired.set(commandId, normalized);
@@ -13072,6 +13121,9 @@ function registerCommandHotkeys(hotkeys: Record<string, string>): void {
     if (commandId === 'system-supercmd-whisper-speak-toggle' && isFnOnlyShortcut(normalizedShortcut)) {
       continue;
     }
+    if (commandId === 'system-supercmd-whisper-speak-toggle' && isStandaloneModifierShortcut(normalizedShortcut)) {
+      continue;
+    }
     if (isFnShortcut(normalizedShortcut)) {
       continue;
     }
@@ -14410,14 +14462,35 @@ app.whenReady().then(async () => {
 
         const isFnSpeakToggle =
           commandId === 'system-supercmd-whisper-speak-toggle' &&
-          isFnOnlyShortcut(normalizedHotkey);
+          (isFnOnlyShortcut(normalizedHotkey) || isStandaloneModifierShortcut(normalizedHotkey));
         const isFnHotkey = isFnShortcut(normalizedHotkey);
         const isHyperHotkey = isHyperShortcut(normalizedHotkey);
+
+        // Standalone modifier shortcuts (Option, Command, etc.) only work for
+        // the whisper speak-toggle (hold-to-talk) command, since they require
+        // the native CGEventTap watcher. Reject them for other commands.
+        if (isStandaloneModifierShortcut(normalizedHotkey) && !isFnSpeakToggle) {
+          // Attempt to restore old mapping if the new one failed.
+          if (oldHotkey) {
+            const normalizedOldHotkey = normalizeAccelerator(oldHotkey);
+            try {
+              const restored = globalShortcut.register(normalizedOldHotkey, async () => {
+                await runCommandById(commandId, 'hotkey');
+              });
+              if (restored) {
+                registeredHotkeys.set(normalizedOldHotkey, commandId);
+              }
+            } catch {}
+          }
+          return { success: false, error: 'unavailable' as const };
+        }
 
         // Register the new one
         try {
           let success = false;
           if (isFnSpeakToggle) {
+            // Standalone modifier or Fn-only shortcuts are handled by the
+            // native CGEventTap speak-toggle watcher, not Electron globalShortcut.
             success = true;
           } else if (isFnHotkey) {
             const fnConfig = parseHoldShortcutConfig(normalizedHotkey);
