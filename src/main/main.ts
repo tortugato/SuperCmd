@@ -1276,6 +1276,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
   audioBuffer: Buffer;
   language?: string;
   mimeType?: string;
+  initialPrompt?: string;
 }): Promise<string> {
   const mimeType = String(opts.mimeType || 'audio/wav').toLowerCase();
   if (mimeType && !mimeType.includes('wav')) {
@@ -1304,6 +1305,7 @@ async function transcribeAudioWithWhisperCpp(opts: {
       command: 'transcribe',
       file: audioPath,
       language,
+      initial_prompt: (opts.initialPrompt || '').trim(),
     });
 
     return result.text || '';
@@ -17937,6 +17939,7 @@ if let tiff = image?.tiffRepresentation {
               audioBuffer,
               language,
               mimeType,
+              initialPrompt: s.ai.speechVocabulary,
             })
           : provider === 'elevenlabs'
             ? await transcribeAudioWithElevenLabs({
