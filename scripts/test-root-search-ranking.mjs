@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
@@ -139,12 +141,14 @@ function ids(items) {
   return Array.from(items, (item) => item.id);
 }
 
+// Simple test runner to avoid adding a dependency on node:test
+// Using ✓ and ✗ here for consistency with the node:test output style.
 function test(name, fn) {
   try {
     fn();
-    console.log(`ok - ${name}`);
+    console.log(`✓ ${name}`);
   } catch (error) {
-    console.error(`not ok - ${name}`);
+    console.error(`✗ ${name}`);
     throw error;
   }
 }
@@ -856,4 +860,6 @@ test('weak browser history does not autocomplete', () => {
   assert.equal(getSharedRootCompletion(query, [history]), null);
 });
 
-console.log('root-search-ranking tests passed');
+// All tests passed if we reach this point without throwing an error.
+// Using a ✓ here for consistency with the node:test output style.
+console.log('✓ All root-search-ranking tests passed');
