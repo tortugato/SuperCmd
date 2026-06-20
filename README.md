@@ -23,6 +23,10 @@ Open-source launcher for macOS: **Raycast + Wispr Flow + Speechify + Memory + AI
 
 SuperCmd gives you Raycast-style extension workflows, hold-to-speak dictation, natural text-to-speech, AI actions backed by configurable providers and memory, notes, canvas, clipboard history, snippet expansion, and window tiling — all from a single keyboard shortcut.
 
+<p align="center">
+  <a href="https://buymeacoffee.com/shobhit99"><img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=shobhit99&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me a Coffee"></a>
+</p>
+
 ## What It Is
 
 SuperCmd is an Electron + React launcher that focuses on Raycast extension compatibility while remaining community-driven and open source. It ships a full `@raycast/api` and `@raycast/utils` compatibility shim so existing Raycast extensions work without modification. For anything that requires tight system integration — hotkeys, window management, speech recognition, clipboard, snippet injection — it drops into Swift and Objective-C to talk directly to macOS frameworks (ApplicationServices, EventKit, AVFoundation, Carbon) for native speed and reliability.
